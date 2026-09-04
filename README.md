@@ -61,4 +61,4 @@ sudo apt install wine
 
 ## License
 
-MIT
+MIT-zadwen
