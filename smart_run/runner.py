@@ -4,6 +4,8 @@ picks the right interpreter/runtime, and launches it - in a terminal window
 when the program is likely to need one (installers, CLI scripts).
 """
 import os
+import sys
+import tempfile
 import shutil
 import subprocess
 import tarfile
@@ -23,43 +25,49 @@ def _find_terminal():
 
 def _launch_in_terminal(cmd_list, cwd=None):
     term = _find_terminal()
+    if not term:
+        raise RuntimeError("A terminal is needed to show this program's output. Install GNOME Terminal or another supported terminal, then try again.")
+    # Arguments are passed separately: filenames never become shell commands.
+    wrapper = '"$@"; result=$?; printf "\\nProgram finished (exit code %s). Press Enter to close.\\n" "$result"; read -r answer; exit "$result"'
+    command = ["bash", "-c", wrapper, "smart-run", *cmd_list]
     if term == "gnome-terminal":
-        subprocess.Popen([term, "--", *cmd_list], cwd=cwd)
-    elif term:
-        subprocess.Popen([term, "-e", " ".join(cmd_list)], cwd=cwd)
+        args = [term, "--", *command]
+    elif term == "xfce4-terminal":
+        args = [term, "--execute", *command]
     else:
-        subprocess.Popen(cmd_list, cwd=cwd)
+        args = [term, "-e", *command]
+    subprocess.Popen(args, cwd=cwd)
 
 
 def _make_executable(path):
-    os.chmod(path, os.stat(path).st_mode | 0o111)
+    os.chmod(path, os.stat(path).st_mode | 0o100)
 
 
 def run_appimage(path):
     _make_executable(path)
-    subprocess.Popen([path])
+    _launch_in_terminal([path], cwd=os.path.dirname(path))
 
 
 def run_run_script(path):
     _make_executable(path)
-    _launch_in_terminal([path])
+    _launch_in_terminal([path], cwd=os.path.dirname(path))
 
 
 def run_shell_script(path):
     _make_executable(path)
-    _launch_in_terminal(["bash", path])
+    _launch_in_terminal(["bash", path], cwd=os.path.dirname(path))
 
 
 def run_jar(path):
     if not shutil.which("java"):
         raise RuntimeError("java isn't installed. Try: sudo apt install default-jre")
-    subprocess.Popen(["java", "-jar", path])
+    _launch_in_terminal(["java", "-jar", path], cwd=os.path.dirname(path))
 
 
 def run_exe(path):
     if not shutil.which("wine"):
         raise RuntimeError("wine isn't installed. Try: sudo apt install wine")
-    subprocess.Popen(["wine", path])
+    _launch_in_terminal(["wine", "msiexec", "/i", path] if path.lower().endswith(".msi") else ["wine", path], cwd=os.path.dirname(path))
 
 
 def run_deb(path):
@@ -68,35 +76,40 @@ def run_deb(path):
     elif shutil.which("gdebi"):
         _launch_in_terminal(["sudo", "gdebi", path])
     elif shutil.which("apt"):
-        _launch_in_terminal(["sudo", "apt", "install", "-y", path])
+        _launch_in_terminal(["sudo", "apt", "install", path])
     else:
         raise RuntimeError("no installer found for .deb (need gdebi or apt)")
 
 
 def run_rpm(path):
-    if shutil.which("pkexec"):
+    if shutil.which("pkexec") and shutil.which("rpm"):
         subprocess.Popen(["pkexec", "rpm", "-i", path])
     else:
         raise RuntimeError("no privilege helper found to install .rpm")
 
 
 def run_python(path):
-    _launch_in_terminal(["python3", path])
+    _launch_in_terminal([sys.executable, path], cwd=os.path.dirname(path))
 
 
 def _extract_archive(path, kind):
     base = os.path.splitext(os.path.basename(path))[0]
     if base.endswith(".tar"):
         base = base[:-4]
-    dest = os.path.join(os.path.dirname(path), base + "_extracted")
-    os.makedirs(dest, exist_ok=True)
+    dest = tempfile.mkdtemp(prefix=base + "_extracted_", dir=os.path.dirname(path))
 
     if kind == "archive_zip":
         with zipfile.ZipFile(path) as z:
+            for member in z.infolist():
+                target = os.path.realpath(os.path.join(dest, member.filename))
+                if os.path.commonpath([dest, target]) != dest or "\\" in member.filename:
+                    raise RuntimeError("This archive contains an unsafe file path and cannot be extracted.")
             z.extractall(dest)
     elif kind == "archive_tar":
         with tarfile.open(path) as t:
-            t.extractall(dest)
+            if not hasattr(tarfile, "data_filter"):
+                raise RuntimeError("Safe archive extraction needs Python 3.12 or newer.")
+            t.extractall(dest, filter="data")
     elif kind == "archive_7z":
         if not shutil.which("7z"):
             raise RuntimeError("7z isn't installed. Try: sudo apt install p7zip-full")
@@ -115,8 +128,12 @@ def run_archive(path, kind):
                 candidates.append(os.path.join(root, f))
 
     if candidates:
-        target = candidates[0]
-        if dialog.confirm(f"Found {os.path.basename(target)} inside the archive.", "Run it?"):
+        candidates.sort()
+        target = dialog.choose_candidate(candidates)
+        if target is None:
+            subprocess.Popen(["xdg-open", dest])
+            return
+        if dialog.confirm(f"Run {os.path.basename(target)}?", f"Location: {target}\nOnly continue if you trust the source of this download."):
             inner_kind = "appimage" if target.lower().endswith(".appimage") else "shell_script"
             dispatch(target, inner_kind)
             return
@@ -142,6 +159,7 @@ DISPATCH = {
 
 
 def dispatch(path, kind):
+    path = os.path.abspath(os.path.expanduser(os.fspath(path)))
     if kind in ("archive_zip", "archive_tar", "archive_7z"):
         return run_archive(path, kind)
     fn = DISPATCH.get(kind, run_unknown)

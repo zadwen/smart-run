@@ -5,6 +5,14 @@ out what the file actually is and launches it correctly — no more manually
 `chmod +x`-ing `.run` files, remembering `java -jar`, or digging Wine out for
 a `.exe`.
 
+## Beginner quick start
+
+1. Open **Smart Run** from your application menu and choose your downloaded file, or right-click it in Files and select **Smart Run**.
+2. Review the filename, location, and action shown in the confirmation.
+3. Continue if you trust the download. Terminal programs keep their output visible; press Enter when finished.
+
+If Wine or Java is missing, Smart Run explains what is needed. It does not install these automatically. Archives extract into a fresh folder; if several installers are found, the folder opens so you can choose. Running a program does not guarantee it is compatible with Linux.
+
 ## Supported file types
 
 | Type | What happens |
@@ -31,8 +39,7 @@ chmod +x install.sh
 ./install.sh
 ```
 
-This installs the `smart-run` CLI and the Nautilus extension, and restarts
-Nautilus so the new context menu item shows up.
+Requires Python 3.12 or newer. This installs the CLI, application menu entry, and Nautilus extension in your user account without sudo or pip. The graphical interface needs GTK 3 Python bindings; the right-click menu needs nautilus-python. Close and reopen Files if its menu needs refreshing.
 
 For `.exe` support you'll also need Wine:
 

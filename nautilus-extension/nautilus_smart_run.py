@@ -4,6 +4,8 @@ look like they might be programs or installers. All the actual detection
 and launching logic lives in the smart-run CLI - this just calls it.
 """
 import subprocess
+import os
+import shutil
 
 import gi
 gi.require_version("Nautilus", "4.0")
@@ -29,7 +31,9 @@ class SmartRunProvider(GObject.GObject, Nautilus.MenuProvider):
             return []
 
         path = file_obj.get_location().get_path()
-        if not path or not path.lower().endswith(RELEVANT_EXTENSIONS):
+        if not path or file_obj.is_directory():
+            return []
+        if not path.lower().endswith(RELEVANT_EXTENSIONS) and not os.access(path, os.X_OK):
             return []
 
         item = Nautilus.MenuItem(
@@ -41,4 +45,5 @@ class SmartRunProvider(GObject.GObject, Nautilus.MenuProvider):
         return [item]
 
     def _activate(self, menu, path):
-        subprocess.Popen(["smart-run", path])
+        launcher = os.path.expanduser("~/.local/bin/smart-run")
+        subprocess.Popen([launcher if os.path.isfile(launcher) else "smart-run", path])

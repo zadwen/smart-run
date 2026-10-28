@@ -2,7 +2,7 @@ from setuptools import find_packages, setup
 
 setup(
     name="smart-run",
-    version="0.1.0",
+    version="0.2.0",
     description="Detects a downloaded file's type and runs it the right way.",
     packages=find_packages(),
     entry_points={
@@ -10,5 +10,5 @@ setup(
             "smart-run=smart_run.cli:main",
         ],
     },
-    python_requires=">=3.7",
+    python_requires=">=3.12",
 )
